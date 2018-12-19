@@ -1,0 +1,3 @@
+CREATE DATABASE IF NOT EXISTS fperf;
+
+CREATE TABLE IF NOT EXISTS fperf.benchmark_user (uid BIGINT PRIMARY KEY, name VARCHAR(20), sex CHAR(1), age INT);
