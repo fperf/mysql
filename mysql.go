@@ -1,6 +1,7 @@
 package redis
 
 import (
+	"bufio"
 	"context"
 	"database/sql"
 	"fmt"
@@ -16,9 +17,11 @@ import (
 
 const seqPlaceHolder = "__seq_int__"
 const randPlaceHolder = "__rand_int__"
+const randRangePlaceHolder = "__rand_range__" // 0 to rmax
 
 var seq func() string = seqCreater(0)
 var random func() string = randCreater(10000000000000000)
+var randRange func() string = randCreater(0)
 
 func seqCreater(begin int64) func() string {
 	// filled map, filled generated to 16 bytes
@@ -92,6 +95,9 @@ func replaceSeq(s string) string {
 func replaceRand(s string) string {
 	return strings.Replace(s, randPlaceHolder, random(), -1)
 }
+func replaceRandRange(s string) string {
+	return strings.Replace(s, randRangePlaceHolder, randRange(), -1)
+}
 
 func replace(s string) string {
 	if strings.Index(s, seqPlaceHolder) >= 0 {
@@ -99,6 +105,9 @@ func replace(s string) string {
 	}
 	if strings.Index(s, randPlaceHolder) >= 0 {
 		s = replaceRand(s)
+	}
+	if strings.Index(s, randRangePlaceHolder) >= 0 {
+		s = replaceRandRange(s)
 	}
 	return s
 }
@@ -118,12 +127,30 @@ type Statement struct {
 type options struct {
 	isolation int
 	readonly  bool
+	stdin     bool
+	rmax      int64
 }
 type Client struct {
 	options
 
 	db *sql.DB
 	s  []*Statement
+}
+
+func loadStdin() []string {
+	var sqls []string
+	scanner := bufio.NewScanner(os.Stdin)
+	for scanner.Scan() {
+		clauses := strings.Split(scanner.Text(), ";")
+		if len(clauses) == 0 {
+			continue
+		}
+		if clauses[len(clauses)-1] == "" {
+			clauses = clauses[0 : len(clauses)-1]
+		}
+		sqls = append(sqls, clauses...)
+	}
+	return sqls
 }
 
 func New(flag *fperf.FlagSet) fperf.Client {
@@ -134,23 +161,41 @@ func New(flag *fperf.FlagSet) fperf.Client {
 	}
 	flag.IntVar(&c.options.isolation, "isolation", 0, "isolation level")
 	flag.BoolVar(&c.options.readonly, "readonly", false, "readonly transaction")
+	flag.BoolVar(&c.options.stdin, "stdin", false, "read sqls from stdin")
+	flag.Int64Var(&c.options.rmax, "rmax", 0, "max value of __rand_range__")
 	flag.Parse()
 
+	if c.options.rmax > 0 {
+		randRange = randCreater(c.options.rmax)
+	}
+
 	args := flag.Args()
-	if len(args) == 0 {
+	if len(args) == 0 && !c.options.stdin {
 		flag.Usage()
 		os.Exit(0)
 	}
 
-	sqls := strings.Split(strings.TrimSpace(args[0]), ";")
+	var sqls []string
+	if len(args) > 0 {
+		sqls = strings.Split(strings.TrimSpace(args[0]), ";")
+		if sqls[len(sqls)-1] == "" {
+			sqls = sqls[0 : len(sqls)-1]
+		}
+	}
+	if c.options.stdin {
+		sqls = append(sqls, loadStdin()...)
+	}
 
 	for _, sql := range sqls {
 		tokens := strings.Fields(sql)
 		switch strings.ToLower(tokens[0]) {
 		case "select", "show":
 			c.s = append(c.s, &Statement{sql: sql, kind: Query})
-		case "insert", "delete", "update":
+		case "insert", "delete", "update", "create", "drop":
 			c.s = append(c.s, &Statement{sql: sql, kind: Exec})
+		default:
+			fmt.Println("unkown sql:", sql)
+			os.Exit(-1)
 		}
 	}
 
