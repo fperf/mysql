@@ -11,8 +11,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/fperf/fperf"
 	_ "github.com/go-sql-driver/mysql"
-	"github.com/shafreeck/fperf"
 )
 
 const seqPlaceHolder = "__seq_int__"
@@ -226,6 +226,8 @@ func (c *Client) Request() error {
 		case Query:
 			rows, err = txn.Query(sql)
 			if rows != nil {
+				for rows.Next() {
+				}
 				rows.Close()
 			}
 		case Exec:
