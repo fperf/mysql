@@ -1,4 +1,4 @@
-package redis
+package mysql
 
 import (
 	"bufio"
@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/fperf/fperf"
+	// use the mysql driver
 	_ "github.com/go-sql-driver/mysql"
 )
 
@@ -19,9 +20,9 @@ const seqPlaceHolder = "__seq_int__"
 const randPlaceHolder = "__rand_int__"
 const randRangePlaceHolder = "__rand_range__" // 0 to rmax
 
-var seq func() string = seqCreater(0)
-var random func() string = randCreater(10000000000000000)
-var randRange func() string = randCreater(0)
+var seq = seqCreater(0)
+var random = randCreater(10000000000000000)
+var randRange = randCreater(0)
 
 func seqCreater(begin int64) func() string {
 	// filled map, filled generated to 16 bytes
